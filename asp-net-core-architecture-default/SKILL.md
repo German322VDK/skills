@@ -107,9 +107,41 @@ Keep `Program.cs` thin. It should contain only configuration, dependency registr
 
 Prefer constructor injection and primary constructors / concise constructors when suitable. Avoid property injection. Never inject or resolve through `IServiceProvider`; never inject `IServiceScopeFactory` unless implementing infrastructure or framework integration code.
 
-Use `IOptions<T>` for settings. Group settings into dedicated strongly typed option classes. Prefer `ValidateOnStart()`. Avoid `IConfiguration` outside the composition root and infrastructure configuration code.
+Use a single strongly typed root configuration record, usually `AppConfig`, as the shared source of truth for application configuration. Store it in `{ProjectName}.Domain/Models/Config`, for example `AppConfig.cs`. Place nested configuration records such as `SignalRSettings`, `JaegerSettings`, and `DatabaseSettings` in the same folder.
 
-Do not silently fall back to hardcoded configuration values. Required connection strings and options must come from `appsettings` or environment variables, be validated on startup, and fail fast with a clear exception when missing.
+Register root configuration only in `Program.cs`:
+
+```csharp
+builder.Services.Configure<AppConfig>(builder.Configuration);
+```
+
+Consume configuration only through `IOptions<AppConfig>`. Read `options.Value` once and reuse the value inside the class. Do not inject `IConfiguration` into handlers, services, repositories, or domain objects.
+
+Do not call `configuration["..."]`, `GetValue<T>()`, or `GetSection()` outside the composition root (`Program.cs` / DI registration). Use `ConfigurationKeyName` when configuration keys differ from property names.
+
+Configuration classes should be immutable record types with `init` properties. Group related settings into nested records. Required configuration must be validated on application startup and fail fast instead of silently using hardcoded defaults. Prefer `ValidateOnStart()` when the project uses options validation.
+
+Example:
+
+```csharp
+/// <summary>
+/// Конфиг приложения.
+/// </summary>
+public sealed record AppConfig
+{
+    /// <summary>
+    /// МРУ.
+    /// </summary>
+    [ConfigurationKeyName("Mru")]
+    public string Mru { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Настройки Jaeger.
+    /// </summary>
+    [ConfigurationKeyName("Jaeger")]
+    public JaegerSettings JaegerSettings { get; init; } = new();
+}
+```
 
 ## Package Selection
 
@@ -495,6 +527,7 @@ Before completing any task, verify:
 
 - public XML documentation is complete and Russian;
 - architecture boundaries are preserved;
+- configuration uses a single `AppConfig` root record, is registered only in `Program.cs`, and is consumed through `IOptions<AppConfig>`;
 - `TransactionBehavior`, repositories, and `IUnitOfWork` follow this standard;
 - no forbidden folders or names were introduced;
 - no template artifacts, dead code, or unused files were introduced;
